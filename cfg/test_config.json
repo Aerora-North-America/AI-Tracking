@@ -1,0 +1,21 @@
+{
+    "tracker": {
+        "model-path": "/home/src/snpe-yolov7-inference/model/yolov5s_v2.5_quantized.dlc",
+        "runtime": "DSP",
+        "labels": 85,
+        "grids": 25200,
+        "input-layers": [
+            "images"
+        ],
+        "output-layers": [
+            "Sigmoid_199",
+            "Sigmoid_201",
+            "Sigmoid_203"
+        ],
+        "output-tensors": [
+            "output",
+            "329",
+            "331"
+        ]
+    }
+}
