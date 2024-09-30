@@ -9,21 +9,66 @@
 #include "runtime.hpp"
 #include "yolo.hpp"
 
+#include <arpa/inet.h>
+#include <unistd.h>
+
+#include <semaphore.h>
+
 bool mavlink_run = false;
 GCS_MAVLINK gcs_data_;
 std::mutex videoWriting;
+char mavlinkData[64];
+int mavlinkDataLen =0;
+sem_t getMavlinkDataSem;
+
+void mavlinkRouter_interface() {
+    // 创建 UDP 套接字
+    int udpSocket = socket(AF_INET, SOCK_DGRAM, 0);
+    if (udpSocket < 0) {
+        std::cerr << "Failed to create socket." << std::endl;
+    }
+
+    // 设置目标地址和端口
+    sockaddr_in targetAddr;
+    targetAddr.sin_family = AF_INET;
+    targetAddr.sin_port = htons(14550);
+    targetAddr.sin_addr.s_addr = inet_addr("0.0.0.0"); // 本机
+
+    while (true) {
+      // 要发送的数据
+      //const char data[16] = "Hello,UDP World";
+      //sem_wait(&getMavlinkDataSem);
+      // 发送数据
+      ssize_t sendResult = sendto(udpSocket, mavlinkData, mavlinkDataLen, 0, 
+                                  (sockaddr*)&targetAddr, sizeof(targetAddr));
+      if (sendResult < 0) {
+          std::cerr << "Failed to send data." << std::endl;
+          //close(udpSocket);
+      }
+      else{
+          //printf("data: ");
+	  //for(int i=0 ; i<mavlinkDataLen; i++){
+	    //printf("%x ",mavlinkData[i]);
+	  //}
+	  //printf("\n");
+	  //std::cout << "Send data success." << std::endl;
+      }
+      usleep(20000);
+    }
+}
+
 
 void mavlink_main() {
   mavlink_run = true;
-  detect_tty();
+  //detect_tty();
   gcs_data_.init(GCS_MAVLINK_DEFINE_COM, GCS_MAVLINK_DEFINE_VERSION);
   LOG_INFO("start mavlink main thread");
 
   while (mavlink_run) {
-    detect_tty();
+    //detect_tty();
     // sendMessage()
     gcs_data_.update();
-    usleep(2000);
+    usleep(1000);
   }
 }
 
@@ -68,7 +113,7 @@ static int locked_frame_id = -1;
 std::vector<std::string> labels;
 
 static bool locked = false;
-static void sendMessage(std::vector<STrack>& track) {
+static void sendMessage(const ObjectData track) {
   // ToDo: send message to GCS
   // for (const auto& track : track) {
   //   // ToDo: send data to GCS
@@ -76,56 +121,85 @@ static void sendMessage(std::vector<STrack>& track) {
 
   mavlink_camera_tracking_image_status_t data;
 
-  //没锁定只发状态
-  if (!locked) {
-    data.tracking_status = 0;
-    data.tracking_mode = 0;
+  // //没锁定只发状态
+  // if (!locked) {
+
+    auto iter =  track;
+    //printf("x: %d  y: %d \n ",iter.bbox.x,iter.bbox.y);
+    cv::Point2i center;
+    //result.bbox.x, result.bbox.y, result.bbox.width,result.bbox.height
+
+    //归一化目标中心点
+    center.x = iter.bbox.x + iter.bbox.width / 2;
+    center.y = iter.bbox.y + iter.bbox.height / 2;
+
+    float point_x = (float)center.x / WIDTH;
+    float point_y = (float)center.y / HEIGHT;
+    printf("px: %f  py: %f \n ",point_x,point_y);
+
+    //归一化目标矩形框
+    float rec_top_x = (float)iter.bbox.x / WIDTH;
+    float rec_top_y = (float)iter.bbox.y / HEIGHT;
+    float rec_width = (float)iter.bbox.width / WIDTH;
+    float rec_height = (float)iter.bbox.height / HEIGHT;
+
+    data.point_x = point_x;
+    data.point_y = point_y;
+
+    data.rec_top_x = rec_top_x;
+    data.rec_top_y = rec_top_y;
+    data.rec_bottom_x = rec_width;
+    data.rec_bottom_y = rec_height;
+
+    //状态更新
+    data.tracking_mode = 1;
+    data.tracking_status = 1;
+    //然后将目标发送出去
     gcs_data_.push_data(data);
-  } else {
-    {
-      //先确定锁定目标id
-      cv::Point2i touch_position;
-      for (auto iter : track) {
-        cv::Rect rect(iter.tlwh[0], iter.tlwh[1], iter.tlwh[2], iter.tlwh[3]);
-        if (rect.contains(touch_position)) {
-          locked_frame_id = iter.track_id;
-          cv::Point2i center;
+  // } else {
+  //     //先确定锁定目标id
+  //     cv::Point2i touch_position;
+  //     for (auto iter : track) {
+  //       cv::Rect rect(iter.tlwh[0], iter.tlwh[1], iter.tlwh[2], iter.tlwh[3]);
+  //       if (rect.contains(touch_position)) {
+  //         locked_frame_id = iter.track_id;
+  //         cv::Point2i center;
 
-          //归一化目标中心点
-          // center.x = lock_obj.bbox.x + lock_obj.bbox.width / 2;
-          // center.y = lock_obj.bbox.y + lock_obj.bbox.height / 2;
-          center.x = iter.tlwh[0] + iter.tlwh[2] / 2;
-          center.y = iter.tlwh[1] + iter.tlwh[3] / 2;
+  //         //归一化目标中心点
+  //         // center.x = lock_obj.bbox.x + lock_obj.bbox.width / 2;
+  //         // center.y = lock_obj.bbox.y + lock_obj.bbox.height / 2;
+  //         center.x = iter.tlwh[0] + iter.tlwh[2] / 2;
+  //         center.y = iter.tlwh[1] + iter.tlwh[3] / 2;
 
-          auto point_x = center.x / WIDTH;
-          auto point_y = center.y / HEIGHT;
+  //         auto point_x = center.x / WIDTH;
+  //         auto point_y = center.y / HEIGHT;
 
-          //归一化目标矩形框
-          auto rec_top_x = iter.tlwh[0] / WIDTH;
-          auto rec_top_y = iter.tlwh[1] / HEIGHT;
-          auto rec_width = iter.tlwh[2] / WIDTH;
-          auto rec_height = iter.tlwh[3] / HEIGHT;
+  //         //归一化目标矩形框
+  //         auto rec_top_x = iter.tlwh[0] / WIDTH;
+  //         auto rec_top_y = iter.tlwh[1] / HEIGHT;
+  //         auto rec_width = iter.tlwh[2] / WIDTH;
+  //         auto rec_height = iter.tlwh[3] / HEIGHT;
 
-          data.point_x = point_x;
-          data.point_y = point_y;
+  //         data.point_x = point_x;
+  //         data.point_y = point_y;
 
-          data.rec_top_x = rec_top_x;
-          data.rec_top_y = rec_top_y;
-          data.rec_bottom_x = rec_width;
-          data.rec_bottom_y = rec_height;
+  //         data.rec_top_x = rec_top_x;
+  //         data.rec_top_y = rec_top_y;
+  //         data.rec_bottom_x = rec_width;
+  //         data.rec_bottom_y = rec_height;
 
-          //状态更新
-          data.tracking_mode = 1;
-          data.tracking_status = 1;
-          //然后将目标发送出去
-          gcs_data_.push_data(data);
-          break;
-        }
-        continue;
-      }
-      locked = true;
-    }
-  }
+  //         //状态更新
+  //         data.tracking_mode = 1;
+  //         data.tracking_status = 1;
+  //         //然后将目标发送出去
+  //         gcs_data_.push_data(data);
+  //         // gcs_data_.update();
+  //         break;
+  //       }
+  //       continue;
+  //     }
+  //     locked = true;
+  // }
 }
 
 cv::VideoWriter video_writer("result.avi",
@@ -261,18 +335,27 @@ void thread_detect_1() {
 
     auto track_results = dsp_detector1_.tracker_->update(obj_vec);
 
-    sendMessage(track_results);
+    for (const auto& result : obj_vec) {
+      //测试只追人，而且只能有一个人
+      printf("frame_id: %d \n",result.label);
+      if(result.label == 0){
+        //printf("x: %d  y: %d \n ",result.bbox.x,result.bbox.y);
+	sendMessage(result);
+      }
+    }
+
+
 
     auto time_used =
         std::chrono::duration_cast<std::chrono::duration<double>>(end - start);
-    // LOG_INFO("detect output size = %f", obj_vec.size());
+    //LOG_INFO("detect output size = %f", obj_vec.size());
     // std::cout << "detect output size =" << obj_vec.size() << std::endl;
     // std::cout << "time_used = " << time_used.count() << std::endl;
 
-    drawResults(tmp, obj_vec,labels);
-    videoWriting.lock();
-    video_writer << tmp;
-    videoWriting.unlock();
+    // drawResults(tmp, obj_vec,labels);
+    // videoWriting.lock();
+    // video_writer << tmp;
+    // videoWriting.unlock();
     usleep(100);
 
     //要不要写入视频？
@@ -305,15 +388,21 @@ void thread_detect_2() {
 
     auto track_results = dsp_detector2_.tracker_->update(obj_vec);
 
-    sendMessage(track_results);
+    for (const auto& result : obj_vec) {
+      //测试只追人，而且只能有一个人
+      printf("frame_id: %d \n",result.label);
+      if(result.label == 0){
+        sendMessage(result);
+      }
+    }
 
     // std::cout << "detect output size =" << obj_vec.size() << std::endl;
     // std::cout << "time_used = " << time_used.count() << std::endl;
 
-    drawResults(tmp, obj_vec,labels);
-    videoWriting.lock();
-    video_writer << tmp;
-    videoWriting.unlock();
+    // drawResults(tmp, obj_vec,labels);
+    // videoWriting.lock();
+    // video_writer << tmp;
+    // videoWriting.unlock();
     usleep(100);
   }
 }
@@ -341,14 +430,21 @@ void thread_detect_3() {
     }
 
     auto track_results = dsp_detector3_.tracker_->update(obj_vec);
-    sendMessage(track_results);
+
+    for (const auto& result : obj_vec) {
+      //测试只追人，而且只能有一个人
+      printf("frame_id: %d \n",result.label);
+      if(result.label == 0){
+        sendMessage(result);
+      }
+    }
 
     // std::cout << "detect output size =" << obj_vec.size() << std::endl;
 
-    drawResults(tmp, obj_vec,labels);
-    videoWriting.lock();
-    video_writer << tmp;
-    videoWriting.unlock();
+    // drawResults(tmp, obj_vec,labels);
+    // videoWriting.lock();
+    // video_writer << tmp;
+    // videoWriting.unlock();
     usleep(100);
   }
 }
@@ -376,14 +472,21 @@ void thread_detect_4() {
     }
 
     auto track_results = dsp_detector4_.tracker_->update(obj_vec);
-    sendMessage(track_results);
+
+    for (const auto& result : obj_vec) {
+      //测试只追人，而且只能有一个人
+      printf("frame_id: %d \n",result.label);
+      if(result.label == 0){
+        sendMessage(result);
+      }
+    }
 
     // std::cout << "detect output size =" << obj_vec.size() << std::endl;
 
-    drawResults(tmp, obj_vec,labels);
-    videoWriting.lock();
-    video_writer << tmp;
-    videoWriting.unlock();
+    // drawResults(tmp, obj_vec,labels);
+    // videoWriting.lock();
+    // video_writer << tmp;
+    // videoWriting.unlock();
     usleep(100);
 
   }
@@ -531,6 +634,9 @@ int main(int argc, char** argv) {
   std::cout << "labels: " << labels.size() << std::endl;
   std::shared_ptr<JsonReader> jsRead = std::make_shared<JsonReader>(file_path);
 
+    //初始化信号量
+  sem_init(&getMavlinkDataSem,0,0);
+
   //读取参数,涉及到数组
   ObjectDetectionConfig config;
   // Json::Value value;
@@ -568,12 +674,14 @@ int main(int argc, char** argv) {
   dsp_detector6_.Init(config);
 
   std::thread getdata_ = std::thread(&cbData);
+  std::thread mavlinkRouter_ = std::thread(&mavlinkRouter_interface);
   detect_1_ = std::thread(&thread_detect_1);
   detect_2_ = std::thread(&thread_detect_2);
   detect_3_ = std::thread(&thread_detect_3);
   detect_4_ = std::thread(&thread_detect_4);
   mavlink_thread_ = std::thread(&mavlink_main);
 
+  mavlinkRouter_.join();
   getdata_.join();
   Deinit();
 

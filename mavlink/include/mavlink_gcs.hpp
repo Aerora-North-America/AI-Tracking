@@ -4,6 +4,7 @@
 
 #include "fctty.hpp"
 #include "mavlink.hpp"
+#include <semaphore.h>
 // #include "utils.h"
 #include "v2.0/common/mavlink_msg_camera_tracking_image_status.h"
 #include "v2.0/mavlink_types.h"
@@ -16,6 +17,10 @@
 #define FCTTYRECV_BUFFER_SIZE 2048
 #define RECEIVE_NONBLOCK_WAITTIME_US 100
 #define SERIAL_PORT_BUFFSIZE FCTTYRECV_BUFFER_SIZE
+
+extern char mavlinkData[64];
+extern int mavlinkDataLen;
+extern sem_t getMavlinkDataSem;
 
 class GCS_MAVLINK {
  public:

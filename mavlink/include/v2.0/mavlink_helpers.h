@@ -377,9 +377,20 @@ MAVLINK_HELPER void _mav_finalize_message_chan_send(mavlink_channel_t chan, uint
 #endif
 
 	MAVLINK_START_UART_SEND(chan, header_len + 3 + (uint16_t)length + (uint16_t)signature_len);
-	_mavlink_send_uart(chan, (const char *)buf, header_len+1);
-	_mavlink_send_uart(chan, packet, length);
-	_mavlink_send_uart(chan, (const char *)ck, 2);
+	char combined[64];
+	for (int i = 0; i < header_len+1; i++) { 
+		combined[i] = buf[i];
+    }
+	for (int i = 0; i < length; i++) { 
+		combined[i+header_len+1] = packet[i];
+    }
+	for (int i = 0; i < 2; i++) { 
+		combined[i+header_len+1+length] = ck[i];
+    }
+	_mavlink_send_uart(chan, (const char *)combined, header_len + 3 + (uint16_t)length + (uint16_t)signature_len);
+	// _mavlink_send_uart(chan, (const char *)buf, header_len+1);
+	// _mavlink_send_uart(chan, packet, length);
+	// _mavlink_send_uart(chan, (const char *)ck, 2);
 	if (signature_len != 0) {
 		_mavlink_send_uart(chan, (const char *)signature, signature_len);
 	}

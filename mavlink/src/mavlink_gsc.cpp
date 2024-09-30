@@ -142,8 +142,22 @@ void comm_send_buffer(mavlink_channel_t chan, const uint8_t *buf, uint8_t len) {
   if (!valid_channel(chan)) {
     return;
   }
-
-  if (mavlink_fd_) {
-    FcTty_Send(mavlink_fd_, buf, len);
+  for(int i=0; i<len ; i++)
+  {
+    mavlinkData[i] = buf[i];
   }
+  mavlinkDataLen = len;
+
+  sem_post(&getMavlinkDataSem);
+
+  // printf("data: ");
+  // for(i=0 ; i<len; i++){
+  //   printf("%x ",buf[i]);
+  // }
+  // printf("\n");
+
+
+  // if (mavlink_fd_) {
+  //   FcTty_Send(mavlink_fd_, buf, len);
+  // }
 }
