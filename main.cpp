@@ -21,6 +21,11 @@ char mavlinkData[64];
 int mavlinkDataLen =0;
 sem_t getMavlinkDataSem;
 
+bool detect_1_finished = true;
+bool detect_2_finished = true;
+bool detect_3_finished = true;
+bool detect_4_finished = true;
+
 void mavlinkRouter_interface() {
     // 创建 UDP 套接字
     int udpSocket = socket(AF_INET, SOCK_DGRAM, 0);
@@ -262,49 +267,20 @@ void cbData() {
       LOG_ERROR("get data from udp is empty, continue");
       continue;
     }
-    switch (QueueCtrl) {
-      case CACHE_1:
-        frame_cache_1.product(std::make_shared<cv::Mat>(tmpdata));
-        // LOG_INFO("push date in queue 1");
-        QueueCtrl = CACHE_2;
-        // usleep()
-        break;
 
-      case CACHE_2:
-        frame_cache_2.product(std::make_shared<cv::Mat>(tmpdata));
-        // LOG_INFO("push date in queue 2");
-        QueueCtrl = CACHE_3;
-
-        break;
-
-      case CACHE_3:
-        frame_cache_3.product(std::make_shared<cv::Mat>(tmpdata));
-        // LOG_INFO("push date in queue 3");
-        QueueCtrl = CACHE_4;
-        break;
-
-      case CACHE_4:
-        frame_cache_4.product(std::make_shared<cv::Mat>(tmpdata));
-        // LOG_INFO("push date in queue 4");
-        QueueCtrl = CACHE_1;
-        break;
-
-        //     // case CACHE_5:
-        //     //   frame_cache_5.product(std::make_shared<cv::Mat>(tmpdata));
-        //     //   LOG_INFO("push date in queue 5");
-        //     //   QueueCtrl = CACHE_6;
-        //     //   break;
-
-        //     // case CACHE_6:
-        //     //   frame_cache_6.product(std::make_shared<cv::Mat>(tmpdata));
-        //     //   LOG_INFO("push date in queue 6");
-        //     //   QueueCtrl = CACHE_1;
-        //     //   break;
-
-      default:
-        break;
+    if(detect_1_finished==true){
+      frame_cache_1.product(std::make_shared<cv::Mat>(tmpdata));
     }
-    usleep(10);
+    else if(detect_1_finished==false && detect_2_finished == true){
+      frame_cache_2.product(std::make_shared<cv::Mat>(tmpdata));
+    }
+    else if(detect_1_finished==false && detect_2_finished == false && detect_3_finished == true){
+      frame_cache_3.product(std::make_shared<cv::Mat>(tmpdata));
+    }
+    else if(detect_1_finished==false && detect_2_finished == false && detect_3_finished == false && detect_4_finished == true){
+      frame_cache_4.product(std::make_shared<cv::Mat>(tmpdata));
+    }
+    usleep(10000);
   }
 }
 
@@ -316,11 +292,11 @@ void thread_detect_1() {
     obj_vec.clear();
 
     frame_cache_1.consumption(imgframe);
-
     // detect
     if (imgframe.get() == nullptr) {
       continue;
     }
+    detect_1_finished = false;
     // LOG_INFO("start detect");
     cv::Mat tmp = *imgframe.get();
 
@@ -330,6 +306,7 @@ void thread_detect_1() {
     dsp_detector1_.Detect(tmp, obj_vec);
 
     if (obj_vec.empty()) {
+      detect_1_finished = true;
       continue;
     }
 
@@ -340,7 +317,7 @@ void thread_detect_1() {
       printf("frame_id: %d \n",result.label);
       if(result.label == 0){
         //printf("x: %d  y: %d \n ",result.bbox.x,result.bbox.y);
-	sendMessage(result);
+	      sendMessage(result);
       }
     }
 
@@ -356,9 +333,8 @@ void thread_detect_1() {
     // videoWriting.lock();
     // video_writer << tmp;
     // videoWriting.unlock();
+    detect_1_finished = true;
     usleep(100);
-
-    //要不要写入视频？
   }
 }
 
@@ -377,12 +353,13 @@ void thread_detect_2() {
     if (imgframe.get() == nullptr) {
       continue;
     }
-
+    detect_2_finished = false;
     cv::Mat tmp = *imgframe.get();
 
     dsp_detector2_.Detect(tmp, obj_vec);
 
     if (obj_vec.empty()) {
+      detect_2_finished = true;
       continue;
     }
 
@@ -403,6 +380,7 @@ void thread_detect_2() {
     // videoWriting.lock();
     // video_writer << tmp;
     // videoWriting.unlock();
+    detect_2_finished = true;
     usleep(100);
   }
 }
@@ -420,12 +398,13 @@ void thread_detect_3() {
     }
     // detect
     // LOG_INFO("start detect");
-
+    detect_3_finished = false;
     cv::Mat tmp = *imgframe.get();
 
     dsp_detector3_.Detect(tmp, obj_vec);
 
     if (obj_vec.empty()) {
+      detect_3_finished = true;      
       continue;
     }
 
@@ -445,6 +424,7 @@ void thread_detect_3() {
     // videoWriting.lock();
     // video_writer << tmp;
     // videoWriting.unlock();
+    detect_3_finished = true;
     usleep(100);
   }
 }
@@ -462,12 +442,13 @@ void thread_detect_4() {
     }
     // detect
     // LOG_INFO("start detect");
-
+    detect_4_finished = false;
     cv::Mat tmp = *imgframe.get();
 
     dsp_detector4_.Detect(tmp, obj_vec);
 
     if (obj_vec.empty()) {
+      detect_4_finished = true;
       continue;
     }
 
@@ -487,6 +468,7 @@ void thread_detect_4() {
     // videoWriting.lock();
     // video_writer << tmp;
     // videoWriting.unlock();
+    detect_4_finished = true;
     usleep(100);
 
   }
